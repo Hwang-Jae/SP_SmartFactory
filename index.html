@@ -108,6 +108,16 @@
 
         <div id="e2e-stages-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3"></div>
         <div id="e2e-sim-status" class="hidden bg-blue-50 border border-blue-200 rounded-xl p-3.5 text-xs text-slate-800"></div>
+        <!-- Detailed Step-by-Step Trace & Data Payload Inspector -->
+        <div id="e2e-detail-inspector" class="bg-slate-900 text-slate-100 rounded-xl p-4 text-xs space-y-2.5">
+          <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-700 pb-2">
+            <span class="font-bold text-blue-300">🔍 단계별 AI 작동 방식 & 데이터 입출력 상세 로그 (단계를 클릭하거나 시뮬레이션을 실행하세요)</span>
+            <span id="e2e-inspector-badge" class="px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[11px] font-mono">READY</span>
+          </div>
+          <div id="e2e-trace-list" class="space-y-2 max-h-60 overflow-y-auto pr-1">
+            <div class="text-slate-400">상단 '▶ E2E 전사 시뮬레이션 실행' 버튼을 누르면 6단계 전사 프로세스가 순차 실행되며 각 단계의 Agent 추론 과정, 입력 데이터, 산출물이 실시간 기록됩니다.</div>
+          </div>
+        </div>
       </div>
 
       <!-- Interactive Parameters & Chart -->
@@ -174,7 +184,7 @@
           </button>
         </div>
 
-        <div id="planning-toast" class="hidden bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-xs text-emerald-800 font-medium"></div>
+        <div id="planning-toast" class="hidden bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-xs text-slate-800 space-y-2"></div>
 
         <div class="overflow-x-auto">
           <table class="w-full text-left border-collapse text-xs">
@@ -304,6 +314,7 @@
               <button id="btn-run-mfi-wf" type="button" class="w-full mfi-accent text-white py-2.5 rounded-xl text-xs sm:text-sm font-semibold hover:opacity-95 transition">
                 ▶ MFI 워크플로우 시뮬레이션 실행
               </button>
+              <div id="mfi-wf-trace" class="hidden bg-slate-900 text-slate-100 rounded-xl p-3 font-mono text-[11px] max-h-40 overflow-y-auto space-y-1"></div>
               <div id="mfi-wf-output" class="hidden bg-white border border-emerald-200 rounded-xl p-3.5 text-xs text-slate-700 space-y-1.5"></div>
             </div>
           </div>
@@ -527,17 +538,54 @@
       `).join('');
     }
 
+    function getStageTraceDetail(stageId) {
+      const p = PLANT_PROFILES[state.plant];
+      const demand = Number(document.getElementById('rng-demand').value);
+      const robot = Number(document.getElementById('rng-robot').value);
+      const scrap = Number(document.getElementById('rng-scrap').value);
+      const eco = Number(document.getElementById('rng-eco').value);
+      const feeds = Math.round(p.feeds * (1 + demand / 100) * (0.7 + (robot / 100) * 0.45));
+      const pcf = (p.pcf * (1 - eco * 0.004) * (1 - scrap * 0.005)).toFixed(1);
+
+      const map = {
+        1: { agent: 'R&D 사양 추출 Agent', input: `OEM 수주 스펙 (${p.name})`, logic: '4개 R&D센터·6개 설계오피스 CAD/PLM 공용화 부품 매핑', output: `표준 EBOM 확정 (수주 변동 ${demand >= 0 ? '+' : ''}${demand}% 반영)` },
+        2: { agent: 'IBP 다공장 캐파 Agent', input: '확정 EBOM + 30개 공장 가동률', logic: `주간 수주 변동(${demand >= 0 ? '+' : ''}${demand}%)에 따른 유럽·북아프리카 라인 부하 재분배`, output: `목표 가동률 ${p.util} · OTIF ${p.otif} 스케줄 생성` },
+        3: { agent: 'Ariba / MM MRP Agent', input: '공장별 생산 스케줄 + 현재고', logic: `스틸 프레임·폴리올/MDI 폼·텍스타일 소요량 계산 (스크랩 ${scrap}% 절감 반영)`, output: '부족 자재 Auto-PO 발행 및 납기 확정' },
+        4: { agent: 'DM 공정·품질 Agent', input: '작업 지시 + IATF 16949 기준', logic: `성형 폼 발포·봉제·조립 파라미터 자동 세팅 및 비주얼 검사`, output: `공정 불량률 0.12% 이하 유지 · 배치 릴리즈 승인` },
+        5: { agent: 'Embodied AI (HMND 01) Agent', input: `EWM Bin 위치 + 라인 소비율`, logic: `자율 물류 비중 ${robot}% 기반 HMND 01 Alpha & AMR 최적 피킹 경로 생성`, output: `일일 ${feeds}건 라인 피딩 · SAP EWM 100% 자동 전기` },
+        6: { agent: 'SFM 탄소·납품 Agent', input: '자재 투입량 + 에너지 + 운송 로그', logic: `재활용·저탄소 소재(${eco}%) 반영 제품 탄소발자국(PCF) 자동 계산`, output: `시트 1대당 PCF ${pcf} kgCO₂e 확정 · OEM 포털 공유` }
+      };
+      return map[stageId];
+    }
+
     function renderE2EStages() {
       document.getElementById('e2e-stages-grid').innerHTML = E2E_STAGES.map(s => `
-        <div id="e2e-card-${s.id}" class="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 transition-all duration-300 space-y-1.5">
+        <button type="button" data-stage-id="${s.id}" id="e2e-card-${s.id}" class="e2e-stage-btn text-left p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 hover:border-blue-400 transition-all duration-300 space-y-1.5">
           <div class="flex items-center justify-between">
             <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-800">${s.sys}</span>
             <span id="e2e-st-${s.id}" class="text-[10px] font-semibold text-slate-400">대기</span>
           </div>
           <div class="text-xs font-bold text-slate-900">${s.title}</div>
           <div class="text-[11px] text-slate-600 leading-snug">${s.detail}</div>
-        </div>
+        </button>
       `).join('');
+
+      document.querySelectorAll('.e2e-stage-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const sid = Number(btn.dataset.stageId);
+          const stage = E2E_STAGES.find(x => x.id === sid);
+          const d = getStageTraceDetail(sid);
+          document.getElementById('e2e-inspector-badge').textContent = `STAGE ${sid} INSPECT`;
+          document.getElementById('e2e-trace-list').innerHTML = `
+            <div class="p-3 rounded-lg bg-slate-800 border border-slate-700 space-y-1">
+              <div class="font-bold text-blue-300">${stage.title} — ${d.agent}</div>
+              <div class="text-slate-300"><span class="text-slate-400">입력(Input):</span> ${d.input}</div>
+              <div class="text-amber-300"><span class="text-slate-400">AI 추론(Logic):</span> ${d.logic}</div>
+              <div class="text-emerald-300"><span class="text-slate-400">산출(Output):</span> ${d.output}</div>
+            </div>
+          `;
+        });
+      });
     }
 
     function updateE2ESimulator() {
@@ -763,46 +811,128 @@
     document.getElementById('btn-run-e2e').addEventListener('click', () => {
       clearTimers(state.e2eTimers);
       const statusBox = document.getElementById('e2e-sim-status');
+      const traceList = document.getElementById('e2e-trace-list');
+      const badge = document.getElementById('e2e-inspector-badge');
       statusBox.classList.remove('hidden');
       statusBox.textContent = 'Joule 전사 오케스트레이션 시작: S/4HANA 및 글로벌 30개 공장 데이터 동기화 중...';
+      traceList.innerHTML = '';
+      badge.textContent = 'RUNNING...';
 
       E2E_STAGES.forEach((s, idx) => {
         const card = document.getElementById(`e2e-card-${s.id}`);
         const st = document.getElementById(`e2e-st-${s.id}`);
-        card.className = 'p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 transition-all duration-300 space-y-1.5';
+        card.className = 'e2e-stage-btn text-left p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 transition-all duration-300 space-y-1.5';
         st.textContent = '대기';
         st.className = 'text-[10px] font-semibold text-slate-400';
 
         const t1 = setTimeout(() => {
-          card.className = 'p-3.5 rounded-xl border-2 border-blue-500 bg-blue-50 shadow-sm transition-all duration-300 space-y-1.5';
+          const d = getStageTraceDetail(s.id);
+          card.className = 'e2e-stage-btn text-left p-3.5 rounded-xl border-2 border-blue-500 bg-blue-50 shadow-sm transition-all duration-300 space-y-1.5';
           st.textContent = '실행 중...';
           st.className = 'text-[10px] font-bold text-blue-700';
-          statusBox.textContent = `[단계 ${idx + 1}/6] ${s.title} (${s.sys}) — ${s.detail}`;
-        }, idx * 550);
+          statusBox.textContent = `[단계 ${idx + 1}/6] ${s.title} (${s.sys}) — ${d.agent} 실행 중...`;
+          traceList.innerHTML += `
+            <div class="p-2.5 rounded-lg bg-slate-800 border border-slate-700 space-y-0.5">
+              <div class="flex items-center justify-between">
+                <span class="font-bold text-blue-300">[${idx + 1}/6] ${s.title} · ${d.agent}</span>
+                <span class="text-[10px] text-emerald-400 font-mono">VERIFIED</span>
+              </div>
+              <div class="text-slate-300">입력: ${d.input} | 추론: ${d.logic}</div>
+              <div class="text-emerald-300">↳ 산출: ${d.output}</div>
+            </div>
+          `;
+          traceList.scrollTop = traceList.scrollHeight;
+        }, idx * 650);
         state.e2eTimers.push(t1);
 
         const t2 = setTimeout(() => {
-          card.className = 'p-3.5 rounded-xl border border-emerald-300 bg-emerald-50/40 transition-all duration-300 space-y-1.5';
+          card.className = 'e2e-stage-btn text-left p-3.5 rounded-xl border border-emerald-300 bg-emerald-50/40 transition-all duration-300 space-y-1.5';
           st.textContent = '완료 ✓';
           st.className = 'text-[10px] font-bold text-emerald-700';
-        }, (idx + 1) * 550 - 80);
+        }, (idx + 1) * 650 - 90);
         state.e2eTimers.push(t2);
       });
 
       const tEnd = setTimeout(() => {
+        badge.textContent = 'COMPLETED (6/6)';
         statusBox.innerHTML = '<strong>✓ MFI E2E 전사 시뮬레이션 완료:</strong> R&D 설계 변경 → 30개 공장 IBP/MRP 배분 → HMND 01 자율 라인 피딩 → OEM 납품 및 SFM 탄소발자국 산출이 단일 루프로 검증되었습니다.';
-      }, E2E_STAGES.length * 550 + 80);
+      }, E2E_STAGES.length * 650 + 100);
       state.e2eTimers.push(tEnd);
     });
 
     document.getElementById('btn-optimize-plan').addEventListener('click', () => {
-      PRODUCTION_LINES[1].oee = 92.6;
-      PRODUCTION_LINES[1].changeover = '15분';
-      PRODUCTION_LINES[1].status = 'AI 최적화 완료 (aATP 확정)';
-      renderPlanning();
       const toast = document.getElementById('planning-toast');
       toast.classList.remove('hidden');
-      toast.textContent = '✓ AI 스케줄링 완료: Molded Foam Line #2 교체 시간을 22분→15분으로 단축하고 OEE를 92.6%로 상향했습니다.';
+      toast.innerHTML = '<div class="font-semibold text-blue-700">1/3단계: [예외 탐지 Agent] Molded Foam Line #2 금형 교체 병목(22분) 및 폴리올 안전재고 부족 시그널 탐지 중...</div>';
+
+      setTimeout(() => {
+        toast.innerHTML = '<div class="font-semibold text-indigo-700">2/3단계: [라인밸런싱 Agent · PP/DS] 유사 폼 사양 연속 배치(Batching) 및 교대 시프트 재계산 중...</div>';
+      }, 600);
+
+      setTimeout(() => {
+        PRODUCTION_LINES[1].oee = 92.6;
+        PRODUCTION_LINES[1].changeover = '15분';
+        PRODUCTION_LINES[1].status = 'AI 최적화 완료 (aATP 확정)';
+        PRODUCTION_LINES[0].oee = 94.8;
+        PRODUCTION_LINES[0].changeover = '12분';
+        PRODUCTION_LINES[0].status = '시프트 연동 조정 (aATP 확정)';
+        renderPlanning();
+
+        const traceRows = [
+          {
+            item: 'Molded Foam Line #2 (Stellantis)',
+            agent: '라인밸런싱 Agent',
+            evidence: 'S/4HANA PP/DS 금형 교체 로그(평균 22분) 및 동일 경도 폼 주문 3건 동시 인입 감지',
+            action: '유사 경도 폴리우레탄 폼 연속 배치(Batching)로 금형 교체 횟수 4회→2회 축소',
+            result: '교체시간 22분→15분(-31.8%), OEE 89.2%→92.6%'
+          },
+          {
+            item: 'Seating Assembly Line A (Renault)',
+            agent: '자재가용성 · aATP Agent',
+            evidence: 'EWM 라인 피딩 리드타임 및 HMND 01 Alpha 작업 큐 여유 슬롯(Bay-A) 확인',
+            action: '조립 투입 시퀀스 재정렬 및 Line #2 폼 출고 타이밍과 동기화',
+            result: '교체시간 14분→12분, OEE 93.4%→94.8%'
+          },
+          {
+            item: '폴리올/MDI 폼 원료 (FM-88)',
+            agent: 'MRP · Ariba 조달 Agent',
+            evidence: '현재고 1.8일분 < 안전재고 2.5일분(증산 반영 시 36시간 내 결품 위험)',
+            action: '우선순위 공급사 긴급 보충 발주(Auto-PO) 트리거 및 EWM 입고 도크 예약',
+            result: '결품 리스크 제거 · Stellantis 납기 OTIF 100% 확정'
+          }
+        ];
+
+        toast.innerHTML = `
+          <div class="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-200 pb-2">
+            <span class="font-bold text-emerald-900">✓ 3/3단계: AI 스케줄 재편성 완료 — 변경 항목별 에이전트 추적성(Traceability)</span>
+            <span class="px-2 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-bold">S/4HANA PP/DS 반영됨</span>
+          </div>
+          <div class="overflow-x-auto bg-white rounded-lg border border-emerald-200">
+            <table class="w-full text-left border-collapse text-[11px]">
+              <thead>
+                <tr class="bg-slate-50 border-b border-slate-200 text-slate-600">
+                  <th class="py-2 px-2.5 font-semibold">수정 항목</th>
+                  <th class="py-2 px-2.5 font-semibold">담당 Agent</th>
+                  <th class="py-2 px-2.5 font-semibold">판단 근거 (Evidence)</th>
+                  <th class="py-2 px-2.5 font-semibold">개선 행위 (Action)</th>
+                  <th class="py-2 px-2.5 font-semibold">수정 반영 결과</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100">
+                ${traceRows.map(r => `
+                  <tr>
+                    <td class="py-2 px-2.5 font-bold text-slate-900">${r.item}</td>
+                    <td class="py-2 px-2.5"><span class="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-800 font-semibold">${r.agent}</span></td>
+                    <td class="py-2 px-2.5 text-slate-600">${r.evidence}</td>
+                    <td class="py-2 px-2.5 text-slate-800">${r.action}</td>
+                    <td class="py-2 px-2.5 font-bold text-emerald-700">${r.result}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        `;
+      }, 1250);
     });
 
     document.getElementById('intralog-form').addEventListener('submit', (e) => {
@@ -853,8 +983,11 @@
       clearTimers(state.mfiWfTimers);
       const cur = state.selectedMfiAsst;
       const out = document.getElementById('mfi-wf-output');
+      const trace = document.getElementById('mfi-wf-trace');
       const prog = document.getElementById('mfi-wf-progress');
       out.classList.add('hidden');
+      trace.classList.remove('hidden');
+      trace.innerHTML = `<div class="text-slate-400">[INIT] ${cur.name} 오케스트레이션 시작 (Plant: ${PLANT_PROFILES[state.plant].name})</div>`;
 
       cur.steps.forEach((s, idx) => {
         const t1 = setTimeout(() => {
@@ -863,6 +996,8 @@
           document.getElementById(`mfi-badge-${idx}`).className = 'w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center animate-pulse';
           document.getElementById(`mfi-st-${idx}`).textContent = '처리 중...';
           document.getElementById(`mfi-st-${idx}`).className = 'text-[10px] font-bold text-blue-700';
+          trace.innerHTML += `<div class="text-sky-300">[STEP ${idx + 1}] ${s.agent} 실행 → ${s.io}</div>`;
+          trace.scrollTop = trace.scrollHeight;
         }, idx * 700);
         state.mfiWfTimers.push(t1);
 
