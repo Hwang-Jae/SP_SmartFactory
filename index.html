@@ -440,10 +440,34 @@
         impact: '일 400건 피딩 · 양산 처리량 최대 5x 목표',
         desc: 'S/4HANA와 EWM 데이터를 실시간으로 해석해 HMND 01 Alpha 휴머노이드 및 AMR의 자재 우선순위 지정·피킹·라인 피딩을 자율 지휘합니다.',
         steps: [
-          { agent: 'S/4HANA 생산신호 Agent', action: '시트 조립 라인의 실시간 소비율 및 긴급 시퀀스 변동 감지', io: '입력: PP/DM 오더 → 전달: 라인 자재 소요' },
-          { agent: 'EWM 자재 우선순위 Agent', action: '보관 위치(Bin)·생산 우선순위·예외 상황을 반영한 작업 큐 생성', io: '입력: SAP EWM → 전달: 우선순위 피킹 오더' },
-          { agent: 'Embodied AI / HMND 01 Agent', action: '휴머노이드(HMND 01 Alpha) 및 AMR 플릿에 파지·이송 경로 지시', io: '입력: Physical AI 모델 → 전달: 물리 작업 실행' },
-          { agent: 'SAP 실적 자동전기 Agent', action: '라인 피딩 완료 즉시 EWM 재고 이동 및 생산 투입 실적 100% 자동 기록', io: '최종 산출물 생성' }
+          {
+            agent: 'S/4HANA 생산신호 Agent',
+            action: '시트 조립 라인의 실시간 소비율 및 긴급 시퀀스 변동 감지',
+            collectedData: 'S/4HANA PP/DM 작업지시(AFKO), 라인 버퍼 센서 잔량, OEM JIT/JIS 서열 시퀀스',
+            decisionLogic: '라인 버퍼 잔여 가동시간 ≤ 25분 또는 긴급 시퀀스 변경 감지 시 즉시 보충 트리거(Urgent Flag) 생성',
+            io: '입력: PP/DM 오더 → 전달: 라인 자재 소요(Lead 25m)'
+          },
+          {
+            agent: 'EWM 자재 우선순위 Agent',
+            action: '보관 위치(Bin)·생산 우선순위·예외 상황을 반영한 작업 큐 생성',
+            collectedData: 'SAP EWM 창고 재고(/SCWM/AQUA), Bin 좌표, FIFO/유효기간, 통로 혼잡도',
+            decisionLogic: '납기 임박도(40%) + 버퍼 고갈률(40%) + 최단 이동거리(20%) 가중 점수로 피킹 큐 동적 정렬',
+            io: '입력: SAP EWM → 전달: 우선순위 피킹 오더'
+          },
+          {
+            agent: 'Embodied AI / HMND 01 Agent',
+            action: '휴머노이드(HMND 01 Alpha) 및 AMR 플릿에 파지·이송 경로 지시',
+            collectedData: '로봇 배터리/가용 상태, 3D 비전 장애물 맵, 팔레트 중량·크기 속성',
+            decisionLogic: '중량 ≤ 15kg·정밀 파지 필요 시 HMND 01 배정, 대량 팔레트 이송 시 AMR 배정 및 충돌 회피 경로 산출',
+            io: '입력: Physical AI 모델 → 전달: 물리 작업 실행'
+          },
+          {
+            agent: 'SAP 실적 자동전기 Agent',
+            action: '라인 피딩 완료 즉시 EWM 재고 이동 및 생산 투입 실적 100% 자동 기록',
+            collectedData: '로봇 바코드/RFID 스캔 확인, 라인 도크 도착 센서, EWM 창고태스크(WT) 상태',
+            decisionLogic: '목표 Bin 투입 스캔 일치 시 수작업 승인 없이 즉시 EWM 311 이동전표 및 PP 백플러시(Backflush) 전기',
+            io: '최종 산출물 생성 (100% SAP 자동 기록)'
+          }
         ],
         deliverables: [
           { title: '실시간 휴머노이드 작업 큐', desc: '일 400건 라인 피딩 무인 스케줄' },
@@ -457,10 +481,34 @@
         impact: '7개국 30개 공장 통합 최적화',
         desc: '시트 시스템, 몰드 폼(Fompak), 인테리어 트림, 텍스타일 등 다품종 부품의 글로벌 R&D-조달-생산을 조율합니다.',
         steps: [
-          { agent: 'R&D 사양 추출 Agent', action: '4개 R&D센터·6개 설계오피스의 OEM별 시트/트림 설계 스펙 통합', io: '입력: PLM/CAD → 전달: 글로벌 표준 BOM' },
-          { agent: '폼/텍스타일 MRP Agent', action: '30개 공장의 스틸·폴리올·원단·LED 원자재 소요량 및 안전재고 산출', io: '입력: S/4HANA MRP → 전달: 공장별 조달 계획' },
-          { agent: '다공장 캐파 배분 Agent', action: 'Renault·Stellantis·Ford·VW 주문 변동에 따른 공장 간 생산 부하 조정', io: '입력: IBP 수주 → 전달: 최적 생산 배정표' },
-          { agent: 'IATF 16949 품질 Agent', action: '자동차 품질 표준 기반 성형·봉제·조립 공정 검사 및 출하 승인', io: '최종 산출물 생성' }
+          {
+            agent: 'R&D 사양 추출 Agent',
+            action: '4개 R&D센터·6개 설계오피스의 OEM별 시트/트림 설계 스펙 통합',
+            collectedData: 'PLM/CAD 도면 메타데이터, 고객사(Renault/Stellantis 등) 옵션 코드, 공용 부품 마스터',
+            decisionLogic: '유사도 ≥ 85%인 기존 폼/프레임 모듈을 자동 매칭해 신규 금형 제작 최소화 및 표준 EBOM 생성',
+            io: '입력: PLM/CAD → 전달: 글로벌 표준 BOM'
+          },
+          {
+            agent: '폼/텍스타일 MRP Agent',
+            action: '30개 공장의 스틸·폴리올·원단·LED 원자재 소요량 및 안전재고 산출',
+            collectedData: 'S/4HANA 현재고, 공급사 리드타임(Ariba), 스크랩률 실적, 주간 OEM 수주 예측',
+            decisionLogic: '순소요량 = 총소요 - (현재고 + 입고예정) + 동적 안전재고; 안전재고 미달 시 자동 PR/PO 생성',
+            io: '입력: S/4HANA MRP → 전달: 공장별 조달 계획'
+          },
+          {
+            agent: '다공장 캐파 배분 Agent',
+            action: '주문 변동에 따른 7개국 공장 간 생산 부하 조정 및 금형 교체 최소화',
+            collectedData: '공장별 라인 OEE, 교대 시프트 가용시간, 금형 교체 시간(Setup Matrix), 운송비/관세',
+            decisionLogic: '동일 경도 폼·원단 연속 배치(Batching)로 교체시간 최소화 및 총 원가+관세 최저 거점에 오더 배정',
+            io: '입력: IBP 수주 → 전달: 최적 생산 배정표'
+          },
+          {
+            agent: 'IATF 16949 품질 Agent',
+            action: '자동차 품질 표준 기반 성형·봉제·조립 공정 검사 및 출하 승인',
+            collectedData: '발포 온도/압력 IoT 로그, 비전 카메라 봉제 검사 결과, 로트(Batch) 이력',
+            decisionLogic: '공정능력지수(Cpk) ≥ 1.33 및 비전 결함 0건 충족 시 자동 출하 승인(UD), 이탈 시 즉시 격리',
+            io: '최종 산출물 생성 (IATF 인증 출하)'
+          }
         ],
         deliverables: [
           { title: '30개 공장 통합 생산 배분표', desc: '유럽·북아프리카 거점별 부하 균형안' },
@@ -474,10 +522,34 @@
         impact: '부품·원자재별 PCF 실시간 산출',
         desc: 'SAP Sustainability Footprint Management(SFM)를 기반으로 원자재부터 완제품까지의 탄소 발자국을 계산해 OEM에 제공합니다.',
         steps: [
-          { agent: '원자재 활동데이터 수집 Agent', action: '스틸 프레임·폴리우레탄 폼·원단·운송 에너지 데이터 자동 추출', io: '입력: S/4HANA + 설비계측 → 전달: 활동량 데이터' },
-          { agent: 'SFM 탄소 회계 Agent', action: '부품·공정별 배출계수 매핑 및 Scope 1·2·3 제품 탄소 발자국(PCF) 산출', io: '입력: SAP SFM → 전달: 부품별 PCF 수치' },
-          { agent: '친환경 소재 시뮬레이터', action: '재활용 텍스타일·저탄소 폼 적용 시 탄소 감축량 및 원가 변동 비교', io: '입력: BOM 대안 → 전달: 감축 시나리오' },
-          { agent: 'OEM PCF 공유 Agent', action: '완성차 고객사(OEM) 및 내부 의사결정팀용 친환경 리포트 자동 배포', io: '최종 산출물 생성' }
+          {
+            agent: '원자재 활동데이터 수집 Agent',
+            action: '스틸 프레임·폴리우레탄 폼·원단·운송 에너지 데이터 자동 추출',
+            collectedData: 'S/4HANA 자재 명세(BOM 중량), 입고 송장(kg/km), 공장 전력·가스 계측기(kWh)',
+            decisionLogic: '재무·물류 전표 기준 실측 활동량(Primary Data) 우선 매핑, 누락 구간만 산업 표준 계수 보정',
+            io: '입력: S/4HANA + 설비계측 → 전달: 활동량 데이터'
+          },
+          {
+            agent: 'SFM 탄소 회계 Agent',
+            action: '부품·공정별 배출계수 매핑 및 Scope 1·2·3 제품 탄소 발자국(PCF) 산출',
+            collectedData: 'Ecoinvent/Catena-X 배출계수 DB, 녹색전력 구매인증(REC), 공정별 에너지 배부율',
+            decisionLogic: 'PCF = Σ(원자재 중량 × 배출계수) + Σ(공정 에너지 × 전력배출계수) + 운송 배출량 (ISO 14067 기준)',
+            io: '입력: SAP SFM → 전달: 부품별 PCF 수치'
+          },
+          {
+            agent: '친환경 소재 시뮬레이터',
+            action: '재활용 텍스타일·저탄소 폼 적용 시 탄소 감축량 및 원가 변동 비교',
+            collectedData: '대체 소재 단가표, 재활용 원단 비율(0~60%), OEM 탄소 감축 목표치',
+            decisionLogic: '목표 PCF(≤ 40 kgCO₂e) 달성 조건 하에 톤당 감축 비용(€/tCO₂)이 가장 낮은 소재 조합 탐색',
+            io: '입력: BOM 대안 → 전달: 감축 시나리오'
+          },
+          {
+            agent: 'OEM PCF 공유 Agent',
+            action: '완성차 고객사(OEM) 및 내부 의사결정팀용 친환경 리포트 자동 배포',
+            collectedData: 'Catena-X / OEM 포털 스키마, 제품별 PCF 검증 증빙, 감사 이력',
+            decisionLogic: '데이터 정합성 검증(완결성 ≥ 98%) 통과 시 고객사 표준 포맷으로 PCF 데이터 자동 전송',
+            io: '최종 산출물 생성 (OEM 포털 공유)'
+          }
         ],
         deliverables: [
           { title: '시트·인테리어 제품별 PCF 명세서', desc: '원자재·공정별 탄소 기여도 분해 리포트' },
@@ -491,10 +563,34 @@
         impact: '800+명 참여 · 만족도 >80% · 효율 >90%',
         desc: '반복·고부하 물류 작업을 휴머노이드로 이관하고 현장 인력을 고부가가치 품질·조율 업무로 전환하도록 지원합니다.',
         steps: [
-          { agent: '작업 부하·안전 분석 Agent', action: '반복 중량물 운반 등 근골격계 부담 및 안전 위험 공정 식별', io: '입력: EHS/현장 로그 → 전달: 로봇 이관 후보 공정' },
-          { agent: '인간-로봇 협업 배분 Agent', action: 'HMND 01/AMR 전담 구역과 인간 작업자 협업 구역 최적 분리', io: '입력: 라인 레이아웃 → 전달: 안전 협업 매트릭스' },
-          { agent: '스킬 전환 코칭 Agent', action: '800+명 현장 인력 대상 로봇 관제·품질 분석 맞춤형 교육 배정', io: '입력: 직원 스킬 프로필 → 전달: 업스킬링 계획' },
-          { agent: '현장 피드백 분석 Agent', action: '파일럿 만족도(>80%) 및 효율 체감(>90%) 기반 개선안 도출', io: '최종 산출물 생성' }
+          {
+            agent: '작업 부하·안전 분석 Agent',
+            action: '반복 중량물 운반 등 근골격계 부담 및 안전 위험 공정 식별',
+            collectedData: 'EHS 근골격계 위험평가(REBA 점수), 일일 중량물(≥15kg) 취급 빈도, 아차사고(Near-miss) 로그, 교대 피로도',
+            decisionLogic: 'REBA 점수 ≥ 8점 또는 일일 반복 운반 ≥ 120회인 공정을 "고위험 로봇 이관 우선순위 1등급"으로 판정',
+            io: '입력: EHS/현장 로그 → 전달: 로봇 이관 후보 공정'
+          },
+          {
+            agent: '인간-로봇 협업 배분 Agent',
+            action: 'HMND 01/AMR 전담 구역과 인간 작업자 협업 구역 최적 분리',
+            collectedData: '공장 Floor 레이아웃 좌표, 로봇 이동 속도·안전 반경, 라인별 작업자 배치 현황',
+            decisionLogic: '고부하 단순 이송은 HMND 01 전담(안전 펜스/동선 분리), 정밀 조립·감성 품질 검사는 인간 전담 배분',
+            io: '입력: 라인 레이아웃 → 전달: 안전 협업 매트릭스'
+          },
+          {
+            agent: '스킬 전환 코칭 Agent',
+            action: '800+명 현장 인력 대상 로봇 관제·품질 분석 맞춤형 교육 배정',
+            collectedData: 'SuccessFactors 직원 보유 스킬, 근속·자격증, 목표 직무(로봇 오퍼레이터/품질 전문가) 요구 역량',
+            decisionLogic: '보유 스킬과 목표 직무 간 갭(Gap)이 가장 큰 상위 3개 역량을 추출해 15분 마이크로러닝 자동 배정',
+            io: '입력: 직원 스킬 프로필 → 전달: 업스킬링 계획'
+          },
+          {
+            agent: '현장 피드백 분석 Agent',
+            action: '파일럿 만족도(>80%) 및 효율 체감(>90%) 기반 개선안 도출',
+            collectedData: '현장 작업자 펄스 서베이(800+명), 로봇 대기/협업 지연 시간, 안전 사고율 추이',
+            decisionLogic: '만족도 < 80% 또는 협업 대기 > 3분 발생 구간의 병목 원인을 NLP 감성 분석해 배치 규칙 자동 보정',
+            io: '최종 산출물 생성 (안전·직무전환 리포트)'
+          }
         ],
         deliverables: [
           { title: '인간-로봇 안전 협업 배치도', desc: '고위험 수작업 제로화 및 동선 분리안' },
@@ -724,16 +820,20 @@
       document.getElementById('mfi-wf-output').classList.add('hidden');
 
       document.getElementById('mfi-wf-steps').innerHTML = cur.steps.map((s, idx) => `
-        <div id="mfi-step-${idx}" class="bg-white border border-slate-200 rounded-xl p-3 transition-all">
-          <div class="flex items-center justify-between mb-1">
+        <div id="mfi-step-${idx}" class="bg-white border border-slate-200 rounded-xl p-3.5 transition-all space-y-1.5">
+          <div class="flex items-center justify-between">
             <div class="flex items-center gap-2">
               <span id="mfi-badge-${idx}" class="w-5 h-5 rounded-full bg-slate-100 text-slate-700 text-[10px] font-bold flex items-center justify-center">${idx + 1}</span>
               <span class="text-xs font-bold text-slate-900">${s.agent}</span>
             </div>
             <span id="mfi-st-${idx}" class="text-[10px] font-semibold text-slate-400">대기 중</span>
           </div>
-          <p class="text-[11px] text-slate-600 pl-7">${s.action}</p>
-          <div class="text-[10px] font-mono text-blue-700 pl-7 mt-1">${s.io}</div>
+          <p class="text-[11px] text-slate-700 pl-7 font-medium">${s.action}</p>
+          <div class="pl-7 space-y-1 text-[10.5px] bg-slate-50/90 rounded-lg p-2 border border-slate-100">
+            <div class="text-slate-600"><span class="font-bold text-slate-800">📥 수집 데이터:</span> ${s.collectedData}</div>
+            <div class="text-indigo-900"><span class="font-bold text-indigo-700">⚖ 판단 근거/로직:</span> ${s.decisionLogic}</div>
+          </div>
+          <div class="text-[10px] font-mono text-blue-700 pl-7">${s.io}</div>
         </div>
       `).join('');
 
